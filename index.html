@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wildlife Discovery Lab</title>
+  
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; color: #f6f8fc; background: #101925; }
+    a-scene { position: absolute; inset: 0; }
+    canvas { touch-action: none; }
+    .top { position: fixed; z-index: 10; top: 18px; left: 22px; right: 22px; display: flex; justify-content: space-between; align-items: start; gap: 12px; pointer-events: none; }
+    .brand { background: rgba(13,24,38,.92); border: 1px solid #344456; border-radius: 16px; padding: 14px 18px; }
+    .eyebrow { color: #f1cf80; font-size: 10px; letter-spacing: 2.5px; font-weight: bold; }
+    h1 { margin: 5px 0 0; font-size: clamp(17px, 3vw, 24px); letter-spacing: -.5px; }
+    #status { max-width: 310px; padding: 12px 16px; border-radius: 24px; font-size: 12px; background: #922d38; font-weight: bold; }
+    .panel { position: fixed; z-index: 10; bottom: 18px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 28px)); padding: 15px 18px; border: 1px solid #3a4c60; border-radius: 20px; background: rgba(13,24,38,.96); text-align: center; }
+    .hint { margin: 0 0 11px; font-size: 13px; color: #d4dfe9; }
+    .controls { display: flex; gap: 10px; }
+    button { flex: 1; min-height: 44px; border: 1px solid #5e687b; border-radius: 12px; font-size: 13px; font-weight: bold; color: white; background: #343657; cursor: pointer; }
+    #bounce-button { background: #155b48; border-color: #418b70; }
+    button:disabled { opacity: .45; cursor: default; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #f1cf80; outline-offset: 3px; }
+    #feedback { min-height: 17px; margin-top: 11px; color: #f1cf80; font-size: 12px; }
+    .meta { margin-top: 8px; color: #95a9ba; font-size: 10px; }
+    .meta a { color: #d2e8f6; margin-left: 8px; }
+    @media (max-width: 540px) {
+      .top { top: 10px; left: 12px; right: 12px; flex-direction: column; gap: 7px; }
+      .brand { padding: 10px 13px; } #status { padding: 8px 12px; }
+      .panel { bottom: 10px; padding: 12px; } .hint { font-size: 12px; }
+    }
+  </style>
+  <script>
+    const THREE = AFRAME.THREE;
+    function notify(message) { document.querySelector('#feedback').textContent = message; }
+    function exhibitVisible() {
+      const marker = document.querySelector('#hiro');
+      return marker && marker.object3D.visible;
+    }
+
+    
+    AFRAME.registerComponent('color-changer', {
+      init: function () {
+        this.colors = ['#ff668b', '#56cfff', '#ffd166', '#b99aff', '#64efbb'];
+        this.names = ['Rose', 'Sky blue', 'Gold', 'Lilac', 'Mint'];
+        this.index = 0;
+        this.onClick = () => {
+          if (!exhibitVisible()) return;
+          this.index = (this.index + 1) % this.colors.length;
+          this.el.setAttribute('material', 'color', this.colors[this.index]);
+          this.el.setAttribute('material', 'emissive', this.colors[this.index]);
+          notify('Ball colour: ' + this.names[this.index]);
+        };
+        this.el.addEventListener('click', this.onClick);
+      },
+      remove: function () { this.el.removeEventListener('click', this.onClick); }
+    });
+
+    
+    AFRAME.registerComponent('bounce-on-tap', {
+      init: function () {
+        this.baseY = this.el.object3D.position.y;
+        this.elapsed = 0;
+        this.bouncing = false;
+        this.onClick = () => {
+          if (!exhibitVisible()) return;
+          this.bouncing = !this.bouncing;
+          this.elapsed = 0;
+          this.el.object3D.position.y = this.baseY;
+          document.querySelector('#bounce-button').textContent = this.bouncing ? 'Stop tube bounce' : 'Bounce green tube';
+          notify(this.bouncing ? 'Green tube is bouncing — tap again to stop' : 'Green tube stopped');
+        };
+        this.el.addEventListener('click', this.onClick);
+      },
+      tick: function (time, delta) {
+        if (!this.bouncing || !exhibitVisible()) return;
+        this.elapsed += Math.min(delta || 0, 60);
+        this.el.object3D.position.y = this.baseY + Math.abs(Math.sin(this.elapsed * Math.PI / 1050)) * 0.75;
+      },
+      remove: function () { this.el.removeEventListener('click', this.onClick); }
+    });
+
+    
+    AFRAME.registerComponent('marker-status', {
+      init: function () {
+        const banner = document.querySelector('#status');
+        const buttons = document.querySelectorAll('.controls button');
+        this.onFound = () => {
+          banner.textContent = document.body.dataset.preview ? 'PREVIEW — camera not used' : 'MARKER FOUND — ready to explore';
+          banner.style.background = '#176748';
+          buttons.forEach(button => button.disabled = false);
+        };
+        this.onLost = () => {
+          banner.textContent = 'MARKER LOST — show the Hiro marker';
+          banner.style.background = '#922d38';
+          buttons.forEach(button => button.disabled = true);
+          notify('Show the whole Hiro marker to continue');
+        };
+        this.el.addEventListener('markerFound', this.onFound);
+        this.el.addEventListener('markerLost', this.onLost);
+        if (document.body.dataset.preview) this.onFound();
+      },
+      remove: function () {
+        this.el.removeEventListener('markerFound', this.onFound);
+        this.el.removeEventListener('markerLost', this.onLost);
+      }
+    });
+
+    
+    AFRAME.registerComponent('screen-tap', {
+      init: function () {
+        this.ray = new THREE.Raycaster();
+        this.pointer = new THREE.Vector2();
+        this.attach = () => {
+          this.canvas = this.el.sceneEl.canvas;
+          this.canvas.addEventListener('pointerdown', this.onPointer);
+        };
+        this.onPointer = event => {
+          if (event.isPrimary === false || event.button > 0 || !exhibitVisible()) return;
+          const scene = this.el.sceneEl;
+          const rect = this.canvas.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1,
+            -(event.clientY - rect.top) / rect.height * 2 + 1);
+          scene.object3D.updateMatrixWorld(true);
+          scene.camera.updateMatrixWorld(true);
+          this.ray.setFromCamera(this.pointer, scene.camera);
+          const objects = Array.from(scene.querySelectorAll('.clickable')).map(el => el.object3D);
+          const hits = this.ray.intersectObjects(objects, true);
+          for (const hit of hits) {
+            let visible = true;
+            for (let node = hit.object; node; node = node.parent) {
+              if (!node.visible) { visible = false; break; }
+            }
+            if (!visible) continue;
+            let node = hit.object;
+            while (node && !(node.el && node.el.classList.contains('clickable'))) node = node.parent;
+            if (node) {
+              node.el.emit('click', {intersection: hit}, false);
+              return;
+            }
+          }
+        };
+        if (this.el.sceneEl.canvas) this.attach();
+        else this.el.sceneEl.addEventListener('render-target-loaded', this.attach, {once: true});
+      },
+      remove: function () {
+        if (this.canvas) this.canvas.removeEventListener('pointerdown', this.onPointer);
+        this.el.sceneEl.removeEventListener('render-target-loaded', this.attach);
+      }
+    });
+    AFRAME.registerComponent('model-status', {
+      init: function () {
+        this.el.addEventListener('model-loaded', () => document.querySelector('#model-state').textContent = 'Fox model ready');
+        this.el.addEventListener('model-error', () => document.querySelector('#model-state').textContent = 'Model missing: check models/Fox.glb');
+      }
+    });
+  </script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><div class="eyebrow">AN INTERACTIVE AR EXHIBIT</div><h1>Wildlife Discovery Lab</h1></div>
+    <div id="status" role="status" aria-live="polite">SEARCHING — show the Hiro marker</div>
+  </header>
+  <div class="panel">
+    <p class="hint">Tap the pink ball to change colour. Tap the green tube to bounce.</p>
+    <div class="controls">
+      <button id="colour-button" disabled>Change ball colour</button>
+      <button id="bounce-button" disabled>Bounce green tube</button>
+    </div>
+    <div id="feedback" role="status" aria-live="polite">Show the marker, then tap an object or use its button.</div>
+    <div class="meta"><span id="model-state">Loading fox model…</span><a id="mode-link" href="preview.html">Try without camera</a></div>
+  </div>
+
+ 
+  <a-scene embedded vr-mode-ui="enabled: false"
+    renderer="antialias: true; colorManagement: true;"
+    arjs="sourceType: webcam; debugUIEnabled: false;">
+    <a-assets timeout="20000">
+      <a-asset-item id="fox-model" src="models/Fox.glb"></a-asset-item>
+    </a-assets>
+    <a-marker id="hiro" preset="hiro" marker-status>
+      
+      <a-cylinder position="0 0.06 0" radius="1.65" height="0.12" color="#152e3c" material="metalness: 0.4; roughness: 0.5"></a-cylinder>
+      <a-torus position="0 0.13 0" rotation="90 0 0" radius="1.58" radius-tubular="0.025" color="#f0c978"></a-torus>
+      <a-cylinder position="0 0.18 -0.3" radius="0.67" height="0.12" color="#244d56"></a-cylinder>
+      <a-torus position="0 0.25 -0.3" rotation="90 0 0" radius="0.64" radius-tubular="0.014" color="#6edac5"></a-torus>
+
+      
+      <a-entity animation="property: rotation; from: 0 0 0; to: 0 360 0; dur: 22000; loop: true; easing: linear" position="0 0.242 -0.3">
+        <a-entity model-status gltf-model="#fox-model" scale="0.0065 0.0065 0.0065"></a-entity>
+      </a-entity>
+
+      
+      <a-sphere id="ball" class="clickable" color-changer position="-0.91 0.52 0.65"
+        radius="0.32" material="color: #ff668b; emissive: #ff668b; emissiveIntensity: 0.18; metalness: 0.2; roughness: 0.25"></a-sphere>
+      <a-torus position="-0.91 0.15 0.65" rotation="90 0 0" radius="0.39" radius-tubular="0.02" color="#ffb2c4"></a-torus>
+      <a-cylinder id="tube" class="clickable" bounce-on-tap position="0.91 0.47 0.65"
+        radius="0.28" height="0.7" material="color: #39dc94; emissive: #1b8a5a; emissiveIntensity: 0.15; metalness: 0.25; roughness: 0.3"></a-cylinder>
+      <a-torus position="0.91 0.15 0.65" rotation="90 0 0" radius="0.38" radius-tubular="0.02" color="#77e8b8"></a-torus>
+
+      
+      <a-box position="0.95 0.4 -0.72" width="0.3" height="0.4" depth="0.3" color="#f0c978"
+        animation="property: rotation; from: 0 0 0; to: 0 360 0; dur: 9000; loop: true; easing: linear"></a-box>
+      <a-cylinder position="-0.91 0.35 -0.67" radius="0.07" height="0.46" color="#a67a50"></a-cylinder>
+      <a-cone position="-0.91 0.83 -0.67" radius-bottom="0.3" radius-top="0" height="0.75" color="#52ad81"></a-cone>
+      <a-cylinder position="-0.53 0.27 -1.1" radius="0.05" height="0.3" color="#a67a50"></a-cylinder>
+      <a-cone position="-0.53 0.57 -1.1" radius-bottom="0.22" radius-top="0" height="0.48" color="#8dceb2"></a-cone>
+     
+      <a-sphere position="0.72 1.2 -0.65" radius="0.055" material="shader: flat; color: #ffe7a3"
+        animation="property: position; from: 0.72 1.15 -0.65; to: 0.72 1.4 -0.65; dur: 1600; loop: true; dir: alternate; easing: easeInOutSine"></a-sphere>
+      <a-text value="WILDLIFE DISCOVERY" position="0 1.65 -0.4" align="center" width="3.6" color="#f9e4b1" side="double"></a-text>
+      <a-text value="COLOUR" position="-0.91 0.16 1.13" rotation="-90 0 0" align="center" width="1.4" color="#ffccdb"></a-text>
+      <a-text value="BOUNCE" position="0.91 0.16 1.13" rotation="-90 0 0" align="center" width="1.4" color="#a3f7cd"></a-text>
+    </a-marker>
+    <a-entity light="type: ambient; intensity: 0.85"></a-entity>
+    <a-entity light="type: directional; intensity: 0.9" position="-2 4 3"></a-entity>
+    
+    <a-entity camera screen-tap></a-entity>
+  </a-scene>
+  <script>
+   
+    document.querySelector('#colour-button').addEventListener('click', () => {
+      if (exhibitVisible()) document.querySelector('#ball').emit('click', {}, false);
+    });
+    document.querySelector('#bounce-button').addEventListener('click', () => {
+      if (exhibitVisible()) document.querySelector('#tube').emit('click', {}, false);
+    });
+  </script>
+</body>
+</html>
